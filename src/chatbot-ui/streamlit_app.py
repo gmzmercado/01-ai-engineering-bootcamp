@@ -8,20 +8,42 @@ from google import genai
 ## Let's create a sidebar with a dropdown for the model list and providers
 with st.sidebar:
     st.title("Settings")
-    
-    # Dropdown for the model list
+
+    # Dropdown for the provider and model list
     provider = st.selectbox("Provider", ["OpenAI", "Groq", "Google"])
-    
     if provider == "OpenAI":
         model_name = st.selectbox("Model", ["gpt-4o-mini", "gpt-4o"])
     elif provider == "Groq":
         model_name = st.selectbox("Model", ["llama-3.3-70b-versatile"])
     elif provider == "Google":
         model_name = st.selectbox("Model", ["gemini-2.0-flash"])
-    
-    # Save provider and model to session state
+
+    # Temperature slider with collapsible explanation
+    with st.expander("ℹ️ About Temperature", expanded=False):
+        st.markdown(
+            "**Temperature** controls the randomness of the model's output. "
+            "Higher values make output more creative, lower values make it more deterministic."
+        )
+    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.5, step=0.05, key="temperature_slider")
+
+    # Max tokens slider with collapsible explanation
+    with st.expander("ℹ️ About Max Tokens", expanded=False):
+        st.markdown(
+            "**Max Tokens** sets the maximum number of tokens the model can generate. "
+            "Higher values allow longer responses."
+        )
+    max_tokens = st.slider("Max Tokens", min_value=100, max_value=2000, value=500, step=50, key="max_tokens_slider")
+
+    # Add Reset Chat button
+    if st.button("🔄 Reset Chat"):
+        st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist  you today?"}]
+        st.rerun()
+
+    # Save provider, model, temperature, and max_tokens to session state
     st.session_state.provider = provider
     st.session_state.model_name = model_name
+    st.session_state.temperature = temperature
+    st.session_state.max_tokens = max_tokens
 
 # Ask for API key respective to the user's selection
 if st.session_state.provider == "OpenAI":
@@ -31,23 +53,23 @@ elif st.session_state.provider == "Groq":
 elif st.session_state.provider == "Google":
     client = genai.Client(api_key=config.GOOGLE_API_KEY)
 
-
-# Define a function called run_llm
-def run_llm(client, messages, max_tokens=500):
-    # Google has a different API for generating content.
-    if st.session_state.provider == "Google":
-        return client.models.generate_content(
-            model=st.session_state.model_name,
-            contents=[message["content"] for message in messages]
-        ).text
-
-    # All other clients (OpenAI and Groq) use the chat.completions.create API.
-    else:
-        return client.chat.completions.create(
-            model=st.session_state.model_name,
-            messages=messages,
-            max_tokens=max_tokens
-        ).choices[0].message.content
+# Define a function called run_llm with error handling
+def run_llm(client, messages, temperature=0.5, max_tokens=500):
+    try:
+        if st.session_state.provider == "Google":
+            return client.models.generate_content(
+                model=st.session_state.model_name,
+                contents=[message["content"] for message in messages]
+            ).text
+        else:
+            return client.chat.completions.create(
+                model=st.session_state.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            ).choices[0].message.content
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 # First steps here.
 # client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
@@ -59,7 +81,6 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-
 if prompt := st.chat_input("Hello, how can I assist you today?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
@@ -67,21 +88,15 @@ if prompt := st.chat_input("Hello, how can I assist you today?"):
         st.markdown(prompt)
     
     with st.chat_message("assistant"):
-        output = run_llm(client, st.session_state.messages)
-        
-        # This part does not interest us anymore.
-        # output = client.chat.completions.create(
-        #     model="gpt-4o-mini",
-        #     messages=[
-        #         {"role": m["role"], "content": m["content"]}
-        #         for m in st.session_state.messages
-        #     ],
-        #     max_tokens=500
-        # )
-        
-    #     st.write(output.choices[0].message.content)
-    # st.session_state.messages.append({"role": "assistant", "content": output})
+        output = run_llm(
+            client,
+            st.session_state.messages,
+            temperature=st.session_state.temperature,
+            max_tokens=st.session_state.max_tokens
+        )
 
         if output:
             st.write(output)
             st.session_state.messages.append({"role": "assistant", "content": output})
+        else:
+            st.write("No response.")
