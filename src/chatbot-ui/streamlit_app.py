@@ -36,8 +36,15 @@ with st.sidebar:
 
     # Add Reset Chat button
     if st.button("🔄 Reset Chat"):
-        st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist  you today?"}]
-        st.rerun()
+        # Use Streamlit's HTML component to execute JavaScript
+        st.components.v1.html(
+            """
+            <script>
+            window.parent.location.reload();
+            </script>
+            """,
+            height=0,
+        )
 
     # Save provider, model, temperature, and max_tokens to session state
     st.session_state.provider = provider
